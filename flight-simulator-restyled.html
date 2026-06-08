@@ -1,0 +1,2196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0e0e0f;
+    --panel:       #161618;
+    --border:      rgba(255,255,255,0.07);
+    --text:        #e8e8e6;
+    --muted:       #9b9b97;
+    --accent:      #c8f060;
+    --accent-dim:  rgba(200,240,96,0.12);
+    --select:      #60c8f0;
+    --danger:      #f08080;
+    --danger-dim:  rgba(240,128,128,0.10);
+    --radius:      8px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
+    background: var(--bg);
+  }
+  .logo {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  #hud-bar {
+    display: flex;
+    gap: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  #hud-bar .hud-item { display: flex; gap: 5px; align-items: baseline; }
+  #hud-bar .hud-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); opacity: 0.6; }
+  #hud-bar .hud-val { color: var(--text); font-size: 12px; }
+  #hud-bar .hud-val.warn  { color: var(--danger); }
+  #hud-bar .hud-val.ok    { color: var(--accent); }
+  #hud-bar .hud-val.blue  { color: var(--select); }
+
+  /* ── Main layout ─────────────────────────────────────────── */
+  #main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+  /* ── Viewport ────────────────────────────────────────────── */
+  #viewport-area {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    cursor: crosshair;
+  }
+  #main-canvas { width: 100%; height: 100%; display: block; }
+
+  /* ── Crosshair ───────────────────────────────────────────── */
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 10;
+  }
+  #crosshair svg { opacity: 0.55; }
+
+  /* ── Warning / status boxes ──────────────────────────────── */
+  #warning-box {
+    display: none;
+    position: absolute;
+    top: 72px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(14,14,15,0.92);
+    border: 1px solid rgba(240,128,128,0.5);
+    border-radius: var(--radius);
+    padding: 20px 48px;
+    z-index: 30;
+    min-width: 600px;
+    text-align: center;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+  }
+  #warning-box.active { display: block; }
+  #warning-box.flash  { animation: warnflash 0.4s step-start infinite; }
+  @keyframes warnflash {
+    0%   { opacity: 1; border-color: rgba(240,128,128,0.7); }
+    50%  { opacity: 0.4; border-color: rgba(240,128,128,0.2); }
+    100% { opacity: 1; }
+  }
+  #warning-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 22px;
+    letter-spacing: 0.14em;
+    color: var(--danger);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  #warning-msg {
+    font-family: 'DM Mono', monospace;
+    font-size: 20px;
+    color: rgba(240,128,128,0.75);
+    letter-spacing: 0.04em;
+    white-space: pre-line;
+  }
+
+  #status-box {
+    display: none;
+    position: absolute;
+    top: 12px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(14,14,15,0.88);
+    border: 1px solid rgba(200,240,96,0.25);
+    border-radius: var(--radius);
+    padding: 8px 20px;
+    z-index: 30;
+    min-width: 280px;
+    text-align: center;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+  }
+  #status-box.active { display: block; }
+  #status-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  #status-msg {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Pitch ribbon ────────────────────────────────────────── */
+  /* ── Home indicator removed ──────────────────────────────── */
+
+  /* ── Warn overlay ────────────────────────────────────────── */
+  #warn-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    border: 4px solid rgba(240,128,128,0.45);
+    background: rgba(240,128,128,0.03);
+  }
+
+  /* ── Radar / location overlay ────────────────────────────── */
+  #location-overlay {
+    display: none;
+    position: absolute;
+    bottom: 14px; right: 14px;
+    width: 196px; height: 196px;
+    background: rgba(14,14,15,0.9);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    z-index: 20;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(6px);
+  }
+  #location-overlay.active { display: flex; }
+  #location-titlebar {
+    padding: 5px 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    text-transform: uppercase;
+    opacity: 0.7;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  #location-canvas { flex: 1; width: 100%; display: block; }
+
+  /* ── Multiview panels ────────────────────────────────────── */
+
+  .mv-panel {
+    flex: 1;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+  }
+  .mv-panel canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .mv-label {
+    position: absolute;
+    top: 6px; left: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 5;
+    text-transform: uppercase;
+  }
+
+  .mv-divider { height: 1px; background: var(--border); flex-shrink: 0; }
+
+  /* ── Control panel ───────────────────────────────────────── */
+  #control-panel {
+    width: 256px;
+    flex-shrink: 0;
+    min-height: 0;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 18px 16px;
+    gap: 20px;
+  }
+  #control-panel::-webkit-scrollbar { width: 4px; }
+  #control-panel::-webkit-scrollbar-track { background: transparent; }
+  #control-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ── Panel sections ──────────────────────────────────────── */
+  .panel-section { display: flex; flex-direction: column; gap: 0; }
+
+  .section-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .section-title.blue { color: var(--select); }
+
+  .divider { height: 1px; background: var(--border); margin: 0 -16px; }
+
+  /* ── Stat / instrument rows ──────────────────────────────── */
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 7px;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .stat-value {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    min-width: 60px;
+    text-align: right;
+  }
+
+  /* ── Speed bar ───────────────────────────────────────────── */
+  .speed-bar-wrap {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 2px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  #speed-bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.15s;
+    border-radius: 2px;
+  }
+
+  /* ── Attitude indicator ──────────────────────────────────── */
+  .attitude-indicator {
+    width: 88px; height: 88px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    margin: 0 auto 12px;
+    position: relative;
+    overflow: hidden;
+    background: #0a0a0b;
+  }
+  #attitude-canvas { width: 88px; height: 88px; display: block; flex-shrink: 0; }
+
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn {
+    flex: 1;
+    padding: 7px 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    text-align: center;
+  }
+  .btn:hover  { border-color: rgba(200,240,96,0.3); color: var(--accent); background: var(--accent-dim); }
+  .btn.active { border-color: rgba(200,240,96,0.4); color: var(--accent); background: var(--accent-dim); }
+  .btn.primary { background: var(--accent-dim); color: var(--accent); border-color: rgba(200,240,96,0.3); }
+  .btn.primary:hover { background: rgba(200,240,96,0.2); }
+  .btn-row { display: flex; gap: 6px; }
+
+  /* ── Toggle switch ───────────────────────────────────────── */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .toggle-row:last-child { margin-bottom: 0; }
+  .toggle-label { font-size: 12px; color: var(--muted); }
+
+  .toggle { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 18px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle input:checked + .toggle-track { background: rgba(200,240,96,0.35); }
+  .toggle-thumb {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--muted);
+    top: 3px; left: 3px;
+    transition: transform 0.2s, background 0.2s;
+    pointer-events: none;
+  }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); background: var(--accent); }
+
+  /* ── Sliders ─────────────────────────────────────────────── */
+  .control-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 8px;
+    width: 100%;
+  }
+  .control-row:last-child { margin-bottom: 0; }
+  .ctrl-label {
+    font-size: 11px;
+    color: var(--muted);
+    flex: 0 0 52px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ctrl-value {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    flex: 0 0 36px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    min-width: 0;
+    height: 2px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+  /* ── Colour inputs ───────────────────────────────────────── */
+  .color-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .color-row:last-child { margin-bottom: 0; }
+  .color-label { font-size: 12px; color: var(--muted); }
+  .color-input-wrap { display: flex; align-items: center; gap: 8px; }
+  .color-hex {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    min-width: 54px;
+  }
+  input[type=color] {
+    width: 30px; height: 22px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    padding: 1px 2px;
+  }
+
+  /* ── Keyboard hints ──────────────────────────────────────── */
+  .key-hint {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 5px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .key {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ── GLB import ──────────────────────────────────────────── */
+  #glb-file-input { display: none; }
+  .file-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 0;
+    background: var(--accent-dim);
+    border: 1px solid rgba(200,240,96,0.3);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-transform: uppercase;
+    text-align: center;
+    transition: background 0.2s;
+    margin-bottom: 8px;
+  }
+  .file-btn:hover { background: rgba(200,240,96,0.2); }
+
+  #glb-status {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    min-height: 14px;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  #glb-status.ok  { color: var(--accent); }
+  #glb-status.err { color: var(--danger); }
+
+  #glb-list { margin-bottom: 4px; }
+  .glb-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .glb-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .glb-remove {
+    color: rgba(240,128,128,0.4);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 12px;
+    background: none;
+    border: none;
+    transition: color 0.15s;
+  }
+  .glb-remove:hover { color: var(--danger); }
+
+  /* ── Model adjust sub-section ────────────────────────────── */
+  .model-adjust-wrap {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* ── Setup panel (left) ──────────────────────────────────── */
+  #setup-panel {
+    width: 256px;
+    flex-shrink: 0;
+    min-height: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+  #setup-panel::-webkit-scrollbar { width: 4px; }
+  #setup-panel::-webkit-scrollbar-track { background: transparent; }
+  #setup-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ── Accordion ───────────────────────────────────────────── */
+  .accordion-item { border-bottom: 1px solid var(--border); }
+  .accordion-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .accordion-header:hover { background: rgba(255,255,255,0.03); }
+  .accordion-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .accordion-chevron {
+    font-size: 10px;
+    color: var(--muted);
+    transition: transform 0.2s;
+    line-height: 1;
+  }
+  .accordion-item.open .accordion-chevron { transform: rotate(180deg); }
+  .accordion-body {
+    display: none;
+    padding: 4px 16px 16px 16px;
+    flex-direction: column;
+    gap: 0;
+    overflow: visible;
+  }
+  .accordion-item.open .accordion-body { display: flex; }
+
+  #setup-panel.hidden   { display: none; }
+  #control-panel.hidden { display: none; }
+
+  /* ── Auxiliary camera ────────────────────────────────────── */
+  #aux-camera-wrap {
+    width: 100%;
+    aspect-ratio: 252 / 192;
+    background: #000;
+    border-radius: var(--radius);
+    overflow: hidden;
+    position: relative;
+  }
+  #canvas-tower {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .aux-label {
+    position: absolute;
+    top: 6px; left: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    opacity: 0.6;
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+
+  /* ── Panel spacer ────────────────────────────────────────── */
+  .panel-spacer { flex: 1; min-height: 20px; }
+
+  /* ── Number spinners ─────────────────────────────────────── */
+  .spinner-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: nowrap;
+  }
+  .spinner-row:last-child { margin-bottom: 0; }
+  .spinner-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: 1;
+  }
+  .spinner-label { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  input[type=number] {
+    -moz-appearance: textfield;
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--accent);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 3px 4px;
+    outline: none;
+    width: 52px;
+    max-width: 52px;
+    text-align: center;
+  }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { opacity: 0.4; }
+  input[type=number]:focus { border-color: rgba(200,240,96,0.35); }
+
+  /* ── Light subsection ────────────────────────────────────── */
+  .light-sub {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    margin-top: 4px;
+  }
+  .light-sub-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="logo">Flight Simulator</div>
+  <div id="hud-bar">
+    <div class="hud-item"><span class="hud-label">Spd</span><span class="hud-val ok" id="hud-speed">0%</span></div>
+    <div class="hud-item"><span class="hud-label">Alt</span><span class="hud-val" id="hud-alt">0</span></div>
+    <div class="hud-item"><span class="hud-label">X</span><span class="hud-val" id="hud-x">0</span></div>
+    <div class="hud-item"><span class="hud-label">Z</span><span class="hud-val" id="hud-z">0</span></div>
+    <div class="hud-item"><span class="hud-label">Hdg</span><span class="hud-val" id="hud-hdg">0°</span></div>
+    <div class="hud-item"><span class="hud-label">Brk</span><span class="hud-val warn" id="hud-brakes">ON</span></div>
+  </div>
+</div>
+
+<div id="main">
+
+  <!-- ── Setup Control Panel (left) ───────────────────────── -->
+  <div id="setup-panel">
+
+    <!-- 1. Environment -->
+    <div class="accordion-item open">
+      <div class="accordion-header">
+        <span class="accordion-title">Environment</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <div class="color-row">
+          <span class="color-label">Background</span>
+          <div class="color-input-wrap">
+            <input type="color" id="bg-color" value="#333333">
+            <span class="color-hex" id="bg-hex">#333333</span>
+          </div>
+        </div>
+        <div class="color-row" style="margin-bottom:12px">
+          <span class="color-label">Grid</span>
+          <div class="color-input-wrap">
+            <input type="color" id="grid-color" value="#646464">
+            <span class="color-hex" id="grid-hex">#646464</span>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Grid</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-grid" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Ground</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-ground" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Shadows</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-shadows" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-row" style="margin-bottom:0">
+          <span class="toggle-label">Light Helpers</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-light-helpers">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Cockpit Skin -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Cockpit Skin</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <label class="file-btn" for="skin-file-input">+ Load Skin PNG</label>
+        <input type="file" id="skin-file-input" accept=".png,.jpg,.jpeg,.webp" style="display:none">
+        <div id="skin-status" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);min-height:14px;letter-spacing:0.04em;margin-bottom:8px;"></div>
+        <div class="toggle-row">
+          <span class="toggle-label">Visible</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-skin-visible" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="control-row" style="margin-bottom:8px">
+          <span class="ctrl-label">Horizon</span>
+          <input type="range" id="skin-horizon-offset" min="-30" max="0" step="0.5" value="0">
+          <span class="ctrl-value" id="skin-horizon-val">0°</span>
+        </div>
+        <div class="color-row" style="margin-bottom:8px">
+          <span class="color-label">HUD Colour</span>
+          <div class="color-input-wrap">
+            <input type="color" id="hud-color" value="#00ff00">
+            <span class="color-hex" id="hud-color-hex">#00ff00</span>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-bottom:0">
+          <button class="btn" id="btn-skin-clear">Clear Skin</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Lights -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Lights</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <div class="control-row">
+          <span class="ctrl-label">Exposure</span>
+          <input type="range" id="light-exposure" min="0" max="3" step="0.01" value="1">
+          <span class="ctrl-value" id="light-exposure-val">1.00</span>
+        </div>
+        <div class="control-row" style="margin-bottom:12px">
+          <span class="ctrl-label">Ambient</span>
+          <input type="range" id="light-ambient" min="0" max="2" step="0.01" value="0.4">
+          <span class="ctrl-value" id="light-ambient-val">0.40</span>
+        </div>
+        <div class="light-sub">
+          <div class="light-sub-title">Sun</div>
+          <div class="color-row">
+            <span class="color-label">Colour</span>
+            <div class="color-input-wrap">
+              <input type="color" id="sun-color" value="#fff7c2">
+              <span class="color-hex" id="sun-color-hex">#fff7c2</span>
+            </div>
+          </div>
+          <div class="control-row" style="margin-bottom:8px">
+            <span class="ctrl-label">Intensity</span>
+            <input type="range" id="sun-intensity" min="0" max="3" step="0.01" value="1">
+            <span class="ctrl-value" id="sun-intensity-val">1.00</span>
+          </div>
+          <div class="spinner-row">
+            <div class="spinner-group"><span class="spinner-label">X</span><input type="number" id="sun-x" value="70" step="10"></div>
+            <div class="spinner-group"><span class="spinner-label">Y</span><input type="number" id="sun-y" value="90" step="10"></div>
+            <div class="spinner-group"><span class="spinner-label">Z</span><input type="number" id="sun-z" value="70" step="10"></div>
+          </div>
+        </div>
+        <div class="light-sub">
+          <div class="light-sub-title">Fill 1</div>
+          <div class="color-row">
+            <span class="color-label">Colour</span>
+            <div class="color-input-wrap">
+              <input type="color" id="fill-color" value="#dcf8fe">
+              <span class="color-hex" id="fill-color-hex">#dcf8fe</span>
+            </div>
+          </div>
+          <div class="control-row" style="margin-bottom:8px">
+            <span class="ctrl-label">Intensity</span>
+            <input type="range" id="fill-intensity" min="0" max="3" step="0.01" value="0.4">
+            <span class="ctrl-value" id="fill-intensity-val">0.40</span>
+          </div>
+          <div class="spinner-row">
+            <div class="spinner-group"><span class="spinner-label">X</span><input type="number" id="fill-x" value="-70" step="10"></div>
+            <div class="spinner-group"><span class="spinner-label">Y</span><input type="number" id="fill-y" value="30" step="10"></div>
+            <div class="spinner-group"><span class="spinner-label">Z</span><input type="number" id="fill-z" value="-70" step="10"></div>
+          </div>
+        </div>
+        <div class="light-sub">
+          <div class="light-sub-title">Fill 2</div>
+          <div class="color-row">
+            <span class="color-label">Colour</span>
+            <div class="color-input-wrap">
+              <input type="color" id="fill2-color" value="#dcf8fe">
+              <span class="color-hex" id="fill2-color-hex">#dcf8fe</span>
+            </div>
+          </div>
+          <div class="control-row" style="margin-bottom:8px">
+            <span class="ctrl-label">Intensity</span>
+            <input type="range" id="fill2-intensity" min="0" max="3" step="0.01" value="0.4">
+            <span class="ctrl-value" id="fill2-intensity-val">0.40</span>
+          </div>
+          <div class="spinner-row">
+            <div class="spinner-group"><span class="spinner-label">X</span><input type="number" id="fill2-x" value="80" step="10"></div>
+            <div class="spinner-group"><span class="spinner-label">Y</span><input type="number" id="fill2-y" value="60" step="10"></div>
+            <div class="spinner-group"><span class="spinner-label">Z</span><input type="number" id="fill2-z" value="-80" step="10"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Atmosphere -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Atmosphere</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <div class="toggle-row">
+          <span class="toggle-label">Decay</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-atmo">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="control-row" style="margin-bottom:0">
+          <span class="ctrl-label">Density</span>
+          <input type="range" id="atmo-density" min="0.01" max="0.4" step="0.01" value="0.08">
+          <span class="ctrl-value" id="atmo-density-val">0.08</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Import Model -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Import Model</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <input type="file" id="glb-file-input" accept=".glb,.gltf">
+        <label class="file-btn" for="glb-file-input">+ Load GLB / GLTF</label>
+        <div id="glb-status"></div>
+        <div id="glb-list"></div>
+        <div class="toggle-row">
+          <span class="toggle-label">Attach to Camera</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-attach">
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="toggle-row" style="margin-bottom:0">
+          <span class="toggle-label">Visible in Main View</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-show-in-main" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Model Adjust -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Model Adjust</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <div class="btn-row" style="margin-bottom:8px">
+          <button class="btn" id="btn-rotate-y" style="flex:1">↻ Rotate 90° Y</button>
+        </div>
+        <div class="btn-row" style="margin-bottom:6px">
+          <button class="btn" id="btn-scale-up">Scale +5%</button>
+          <button class="btn" id="btn-scale-dn">Scale −5%</button>
+        </div>
+        <div class="stat-row" style="margin-bottom:10px">
+          <span class="stat-label">Scale</span>
+          <span class="stat-value" id="model-scale-val">1.00</span>
+        </div>
+        <div class="btn-row" style="margin-bottom:6px">
+          <button class="btn" id="btn-shift-fwd">↑ Fwd</button>
+          <button class="btn" id="btn-shift-bkwd">↓ Bkwd</button>
+        </div>
+        <div class="btn-row" style="margin-bottom:8px">
+          <button class="btn" id="btn-shift-up">↑ Up</button>
+          <button class="btn" id="btn-shift-dn">↓ Down</button>
+        </div>
+        <div class="stat-row" style="margin-bottom:0">
+          <span class="stat-label">Offset</span>
+          <span class="stat-value" id="model-offset-val">0, 0, 0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Scene Objects -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Scene Objects</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <div class="control-row" style="margin-bottom:10px">
+          <span class="ctrl-label">Cube Count</span>
+          <input type="range" id="cube-count" min="50" max="300" step="1" value="100">
+          <span class="ctrl-value" id="cube-count-val" style="min-width:32px;text-align:right">100</span>
+        </div>
+        <div class="spinner-row" style="margin-bottom:10px">
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Size Min</span>
+            <input type="number" id="cube-size-min" value="1" min="1" max="10" step="1">
+          </div>
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Max</span>
+            <input type="number" id="cube-size-max" value="3" min="1" max="10" step="1">
+          </div>
+        </div>
+        <div class="color-row" style="margin-bottom:8px">
+          <span class="color-label">Colour</span>
+          <div class="color-input-wrap">
+            <input type="color" id="cube-color" value="#888888">
+            <span class="color-hex" id="cube-color-hex">#888888</span>
+          </div>
+        </div>
+        <div class="control-row" style="margin-bottom:10px">
+          <span class="ctrl-label">Tolerance</span>
+          <input type="range" id="cube-tolerance" min="0" max="50" step="1" value="0">
+          <span class="ctrl-value" id="cube-tolerance-val">0%</span>
+        </div>
+        <div class="spinner-row" style="margin-bottom:12px">
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Height Min</span>
+            <input type="number" id="cube-height-min" value="1" min="0" max="50" step="1">
+          </div>
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Max</span>
+            <input type="number" id="cube-height-max" value="30" min="0" max="50" step="1">
+          </div>
+        </div>
+        <div class="btn-row" style="margin-bottom:6px">
+          <button class="btn primary" id="btn-spawn-cubes">Cubes</button>
+          <button class="btn primary" id="btn-spawn-stars">Stars</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btn-clear-cubes">Remove Scene Objects</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Warnings -->
+    <div class="accordion-item">
+      <div class="accordion-header">
+        <span class="accordion-title">Warnings</span>
+        <span class="accordion-chevron">▾</span>
+      </div>
+      <div class="accordion-body">
+        <div class="toggle-row" style="margin-bottom:14px">
+          <span class="toggle-label">Warnings Active</span>
+          <label class="toggle">
+            <input type="checkbox" id="btn-warnings-active" checked>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="light-sub-title" style="margin-bottom:8px">Altitude</div>
+        <div class="spinner-row" style="margin-bottom:10px">
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Advisory</span>
+            <input type="number" id="warn-alt-advisory" value="50" min="0" max="500" step="1">
+          </div>
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Critical</span>
+            <input type="number" id="warn-alt-critical" value="60" min="0" max="500" step="1">
+          </div>
+        </div>
+        <div class="light-sub-title" style="margin-bottom:8px">Distance</div>
+        <div class="spinner-row" style="margin-bottom:0">
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Advisory</span>
+            <input type="number" id="warn-dist-advisory" value="50" min="0" max="500" step="1">
+          </div>
+          <div class="spinner-group">
+            <span class="spinner-label" style="width:auto;margin-right:4px;font-size:11px;color:var(--muted)">Critical</span>
+            <input type="number" id="warn-dist-critical" value="60" min="0" max="500" step="1">
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Viewport ───────────────────────────────────────────── -->
+  <div id="viewport-area">
+    <canvas id="main-canvas"></canvas>
+    <img id="cockpit-skin" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;z-index:15;" alt="cockpit skin">
+    <div id="warning-box">
+      <div id="warning-title">Warning</div>
+      <div id="warning-msg"></div>
+    </div>
+    <div id="status-box" class="active">
+      <div id="status-title">Brakes On</div>
+      <div id="status-msg">Press SPACEBAR or CLICK viewport to release brakes</div>
+    </div>
+    <div id="crosshair">
+      <svg width="28" height="28" viewBox="0 0 28 28">
+        <circle cx="14" cy="14" r="5" fill="none" stroke="#c8f060" stroke-width="1"/>
+        <line x1="14" y1="0" x2="14" y2="9"  stroke="#c8f060" stroke-width="1"/>
+        <line x1="14" y1="19" x2="14" y2="28" stroke="#c8f060" stroke-width="1"/>
+        <line x1="0"  y1="14" x2="9"  y2="14" stroke="#c8f060" stroke-width="1"/>
+        <line x1="19" y1="14" x2="28" y2="14" stroke="#c8f060" stroke-width="1"/>
+      </svg>
+    </div>
+    <div id="warn-overlay"></div>
+    <canvas id="hud-canvas" style="position:absolute;pointer-events:none;z-index:20;"></canvas>
+    <div id="location-overlay">
+      <div id="location-titlebar">Radar Screen</div>
+      <canvas id="location-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Flight Control Panel (right) ─────────────────────── -->
+  <div id="control-panel">
+
+    <!-- Instruments -->
+    <div class="panel-section">
+      <div class="section-title">Instruments</div>
+      <div class="attitude-indicator">
+        <canvas id="attitude-canvas" width="88" height="88"></canvas>
+      </div>
+      <div class="stat-row"><span class="stat-label">Speed</span><span class="stat-value" id="cp-speed">0%</span></div>
+      <div class="speed-bar-wrap"><div id="speed-bar"></div></div>
+      <div class="stat-row"><span class="stat-label">Altitude</span><span class="stat-value" id="cp-alt">0.00</span></div>
+      <div class="stat-row"><span class="stat-label">Pitch</span><span class="stat-value" id="cp-pitch">0.0°</span></div>
+      <div class="stat-row" style="margin-bottom:0"><span class="stat-label">Heading</span><span class="stat-value" id="cp-hdg">0°</span></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- HUD -->
+    <div class="panel-section">
+      <div class="section-title">HUD</div>
+      <div class="toggle-row">
+        <span class="toggle-label">HUD Active</span>
+        <label class="toggle">
+          <input type="checkbox" id="btn-hud-active" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-location">Radar</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Camera Position -->
+    <div class="panel-section">
+      <div class="section-title">Camera Position</div>
+      <div class="stat-row"><span class="stat-label">X</span><span class="stat-value" id="cp-pos-x">0.00</span></div>
+      <div class="stat-row"><span class="stat-label">Y</span><span class="stat-value" id="cp-pos-y">0.00</span></div>
+      <div class="stat-row" style="margin-bottom:0"><span class="stat-label">Z</span><span class="stat-value" id="cp-pos-z">0.00</span></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Auxiliary Camera -->
+    <div class="panel-section">
+      <div class="section-title">Auxiliary Camera</div>
+      <div id="aux-camera-wrap">
+        <div class="aux-label">Control Tower</div>
+        <canvas id="canvas-tower"></canvas>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Controls -->
+    <div class="panel-section">
+      <div class="section-title">Controls</div>
+      <div class="key-hint"><span class="key">SPC</span> Brakes on / off</div>
+      <div class="key-hint"><span class="key">W</span> Increase speed</div>
+      <div class="key-hint"><span class="key">S</span> Decrease speed</div>
+      <div class="key-hint"><span class="key">Esc</span> Pause / Resume</div>
+      <div class="key-hint"><span class="key">E</span> Toggle Setup Panel</div>
+      <div class="key-hint"><span class="key">I</span> Toggle Flight Panel</div>
+      <div class="key-hint" style="margin-bottom:0"><span class="key">Mouse</span> Steer (airborne)</div>
+    </div>
+
+    <div class="panel-spacer"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+// ── STATE ────────────────────────────────────────────────────────────────────
+const MAX_SPEED = 0.2;
+let speed = 0;
+let bgColor    = '#333333';
+let bgColorInt = 0x333333; // cached integer — updated when bg colour changes
+let gridColor = '#646464';
+let locationActive  = false;
+let atmoOn          = false;
+let atmoDensity     = 0.08;
+let flightPhase     = 0;   // 0=parked 1=taxi 2=rolling 3=airborne
+let brakesOn        = true;
+const mouse = { x: 0, y: 0 };
+let radarBlips = [];
+let lastBlipTime = 0;
+let attachToCamera  = false;
+let showInMainView  = true;
+let attachedModel   = null;
+let gamePaused      = false;
+let warningsActive  = true;
+let horizonOffset   = 0; // radians — applied to camera child X rotation only
+
+// ── THREE SCENE ───────────────────────────────────────────────────────────────
+const scene    = new THREE.Scene();
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('main-canvas'), antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled    = true;
+renderer.shadowMap.type       = THREE.PCFSoftShadowMap;
+renderer.toneMapping          = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure  = 1.0;
+
+const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 300);
+camera.rotation.order = 'YXZ';
+
+// Camera rig — handles all flight transforms (position, yaw, pitch, roll)
+// The camera sits inside as a child with a fixed local X offset (horizon adjustment)
+const cameraRig = new THREE.Group();
+cameraRig.rotation.order = 'YXZ';
+cameraRig.position.set(0, 2, -4);
+cameraRig.add(camera);
+scene.add(cameraRig);
+
+// Multiview cameras (renderer created lazily on first activation)
+const mvRenderers = {}, mvCameras = {};
+const towerCam = new THREE.PerspectiveCamera(30, 1, 0.1, 300);
+towerCam.position.set(-4, 2, 0.5);
+towerCam.rotation.order = 'YXZ';
+towerCam.layers.enable(1);
+mvCameras['tower'] = towerCam;
+
+function ensureMvRenderers() {
+  if (mvRenderers['tower']) return;
+  const c = document.getElementById('canvas-tower');
+  const r = new THREE.WebGLRenderer({ canvas: c, antialias: true });
+  r.setPixelRatio(window.devicePixelRatio);
+  r.toneMapping         = THREE.ACESFilmicToneMapping;
+  r.toneMappingExposure = 1.0;
+  mvRenderers['tower'] = r;
+}
+
+// ── SCENE OBJECTS ─────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+const sun = new THREE.DirectionalLight(0xfff7c2, 1.0);
+sun.position.set(70, 90, 70);
+sun.target.position.set(0, 20, 0);
+sun.castShadow                        = true;
+sun.shadow.mapSize.width              = 2048;
+sun.shadow.mapSize.height             = 2048;
+sun.shadow.camera.near                = 10;
+sun.shadow.camera.far                 = 250;
+sun.shadow.camera.left                = -60;
+sun.shadow.camera.right               =  60;
+sun.shadow.camera.top                 =  60;
+sun.shadow.camera.bottom              = -60;
+sun.shadow.bias                       = -0.001;
+sun.shadow.radius                     = 4;
+scene.add(sun);
+scene.add(sun.target);
+
+const fill = new THREE.DirectionalLight(0xdcf8fe, 0.4);
+fill.position.set(-70, 30, -70);
+fill.target.position.set(0, 10, 0);
+scene.add(fill);
+scene.add(fill.target);
+
+const fill2 = new THREE.DirectionalLight(0xdcf8fe, 0.4);
+fill2.position.set(80, 60, -80);
+fill2.target.position.set(0, 10, 0);
+scene.add(fill2);
+scene.add(fill2.target);
+
+const sunHelper   = new THREE.DirectionalLightHelper(sun,   20);
+const fillHelper  = new THREE.DirectionalLightHelper(fill,  20);
+const fill2Helper = new THREE.DirectionalLightHelper(fill2, 20);
+sunHelper.visible   = false;
+fillHelper.visible  = false;
+fill2Helper.visible = false;
+scene.add(sunHelper);
+scene.add(fillHelper);
+scene.add(fill2Helper);
+
+function buildGrid(hex) {
+  const c = parseInt(hex.replace('#',''), 16);
+  const g = new THREE.GridHelper(100, 100, c, c);
+  g.position.y = 0.005;
+  return g;
+}
+let gridMesh = buildGrid(gridColor);
+scene.add(gridMesh);
+
+// Visible ground plane — MeshStandardMaterial, receives shadows and lighting
+const groundMat = new THREE.MeshStandardMaterial({
+  color:     0x888888,
+  roughness: 0.85,
+  metalness: 0.0,
+});
+const groundPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(100, 100),
+  groundMat
+);
+groundPlane.rotation.x    = -Math.PI / 2;
+groundPlane.position.y    = 0;
+groundPlane.receiveShadow = true;
+scene.add(groundPlane);
+
+// Stars — spawned on demand via button
+let starPoints = null;
+
+
+
+// ── CAMERA ROTATION STATE ─────────────────────────────────────────────────────
+const attachPivot = new THREE.Group();
+scene.add(attachPivot);
+
+const camYaw   = { val: 0 };
+const camPitch = { val: 0 };
+const camRoll  = { val: 0 };
+
+// ── RESIZE ────────────────────────────────────────────────────────────────────
+const viewportEl = document.getElementById('viewport-area');
+function resizeAll() {
+  const vp = viewportEl.getBoundingClientRect();
+  if (vp.width > 0) {
+    renderer.setSize(vp.width, vp.height);
+    camera.aspect = vp.width / vp.height;
+    camera.updateProjectionMatrix();
+  }
+  if (mvRenderers['tower']) {
+    const r = document.getElementById('aux-camera-wrap').getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      mvRenderers['tower'].setSize(r.width, r.height);
+      mvCameras['tower'].aspect = r.width / r.height;
+      mvCameras['tower'].updateProjectionMatrix();
+    }
+  }
+}
+window.addEventListener('resize', resizeAll);
+resizeAll();
+
+// ── INPUT ─────────────────────────────────────────────────────────────────────
+viewportEl.addEventListener('mousemove', e => {
+  if (gamePaused) return;
+  const r = viewportEl.getBoundingClientRect();
+  mouse.x =  ((e.clientX - r.left) / r.width)  * 2 - 1;
+  mouse.y = -((e.clientY - r.top)  / r.height) * 2 + 1;
+});
+
+viewportEl.addEventListener('click', () => {
+  if (brakesOn) { brakesOn = false; flightPhase = 1; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === ' ') {
+    if (brakesOn) { brakesOn = false; flightPhase = 1; }
+    else if (flightPhase < 3) { brakesOn = true; speed = 0; flightPhase = 0; }
+    e.preventDefault();
+  }
+  if (e.key === 'e' || e.key === 'E') {
+    document.getElementById('setup-panel').classList.toggle('hidden');
+    setTimeout(resizeAll, 50);
+    e.preventDefault();
+  }
+  if (e.key === 'i' || e.key === 'I') {
+    document.getElementById('control-panel').classList.toggle('hidden');
+    setTimeout(resizeAll, 50);
+    e.preventDefault();
+  }
+  if (!brakesOn && !gamePaused) {
+    if (e.key === 'w' || e.key === 'W') { speed = Math.min(MAX_SPEED, speed + 0.005); e.preventDefault(); }
+    if (e.key === 's' || e.key === 'S') { speed = Math.max(0, speed - 0.005);         e.preventDefault(); }
+  }
+  if (e.key === 'Escape') {
+    gamePaused = !gamePaused;
+    if (gamePaused) {
+      mouse.x = 0; mouse.y = 0;
+      document.getElementById('warning-box').classList.add('active', 'flash');
+      document.getElementById('warning-title').textContent = '⏸ Paused';
+      document.getElementById('warning-msg').textContent = 'Press BACKSPACE to resume';
+      document.getElementById('warn-overlay').style.display = 'block';
+    } else {
+      document.getElementById('warning-box').classList.remove('active', 'flash');
+      document.getElementById('warn-overlay').style.display = 'none';
+    }
+    e.preventDefault();
+  }
+});
+
+// ── 2D CANVASES ───────────────────────────────────────────────────────────────
+const attCtx         = document.getElementById('attitude-canvas').getContext('2d');
+const locationCanvas = document.getElementById('location-canvas');
+const locCtx         = locationCanvas.getContext('2d');
+
+function drawAttitude(pitch, roll) {
+  const w=88,h=88,cx=44,cy=44,r=40;
+  attCtx.clearRect(0,0,w,h);
+  attCtx.save(); attCtx.beginPath(); attCtx.arc(cx,cy,r,0,Math.PI*2); attCtx.clip();
+  attCtx.save(); attCtx.translate(cx,cy); attCtx.rotate(roll);
+  const ho = Math.sin(pitch)*r*1.5;
+  attCtx.fillStyle='#50a0dc'; attCtx.fillRect(-r,-r,r*2,r+ho);
+  attCtx.fillStyle='#96dc50'; attCtx.fillRect(-r,-r+ho+r,r*2,r*2);
+  attCtx.strokeStyle='rgba(200,240,96,0.6)'; attCtx.lineWidth=1.5;
+  attCtx.beginPath(); attCtx.moveTo(-r,ho); attCtx.lineTo(r,ho); attCtx.stroke();
+  attCtx.restore();
+  attCtx.strokeStyle='rgba(255,255,255,0.12)'; attCtx.lineWidth=1;
+  attCtx.beginPath(); attCtx.arc(cx,cy,r,0,Math.PI*2); attCtx.stroke();
+  attCtx.strokeStyle='rgba(255,255,255,0.65)'; attCtx.lineWidth=1.5;
+  attCtx.beginPath();
+  attCtx.moveTo(cx-22,cy); attCtx.lineTo(cx-9,cy);
+  attCtx.moveTo(cx+9,cy);  attCtx.lineTo(cx+22,cy); attCtx.stroke();
+  attCtx.beginPath(); attCtx.arc(cx,cy,2.5,0,Math.PI*2);
+  attCtx.fillStyle='#c8f060'; attCtx.fill();
+  attCtx.restore();
+}
+
+// ── WORLD-AXIS GIZMO — exact Panzer Editor implementation ────────────────────
+const axisScene  = new THREE.Scene();
+const axisCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+axisCamera.position.set(0, 0, 3);
+axisCamera.lookAt(0, 0, 0);
+function makeAxisArrow(dir, color, label) {
+  const g = new THREE.Group();
+  const norm = dir.clone().normalize();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.65, 8),
+    new THREE.MeshBasicMaterial({ color, depthTest: false }));
+  shaft.position.copy(norm.clone().multiplyScalar(0.325));
+  shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), norm);
+  shaft.renderOrder = 999; g.add(shaft);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 8),
+    new THREE.MeshBasicMaterial({ color, depthTest: false }));
+  head.position.copy(norm.clone().multiplyScalar(0.8));
+  head.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), norm);
+  head.renderOrder = 999; g.add(head);
+  const c2d = document.createElement('canvas'); c2d.width = c2d.height = 64;
+  const ctx = c2d.getContext('2d');
+  ctx.font = 'bold 38px sans-serif';
+  ctx.fillStyle = '#' + new THREE.Color(color).getHexString();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, 32, 34);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c2d), depthTest: false, transparent: true }));
+  sprite.scale.set(0.32, 0.32, 1); sprite.position.copy(norm.clone().multiplyScalar(1.08)); sprite.renderOrder = 1000;
+  g.add(sprite); return g;
+}
+const axisRoot = new THREE.Group();
+axisRoot.add(makeAxisArrow(new THREE.Vector3(1,0,0), 0xe05050, 'X'));
+axisRoot.add(makeAxisArrow(new THREE.Vector3(0,1,0), 0x60c060, 'Y'));
+axisRoot.add(makeAxisArrow(new THREE.Vector3(0,0,1), 0x5080e0, 'Z'));
+axisScene.add(axisRoot);
+const GIZMO_SIZE = 90;
+const _gizmoQ   = new THREE.Quaternion(); // reused each frame — avoids per-frame allocation
+
+function drawLocation() {
+  const w=locationCanvas.width, h=locationCanvas.height;
+  if (!w||!h) return;
+  // Background
+  locCtx.fillStyle='rgba(14,14,15,0.96)'; locCtx.fillRect(0,0,w,h);
+  // Grid lines
+  locCtx.strokeStyle='rgba(255,255,255,0.05)'; locCtx.lineWidth=0.5;
+  for(let x=0;x<w;x+=20){locCtx.beginPath();locCtx.moveTo(x,0);locCtx.lineTo(x,h);locCtx.stroke();}
+  for(let y=0;y<h;y+=20){locCtx.beginPath();locCtx.moveTo(0,y);locCtx.lineTo(w,y);locCtx.stroke();}
+  const cx=w/2, cy=h/2, scale=3;
+  const camX=cameraRig.position.x, camZ=cameraRig.position.z;
+  // Radar blips
+  const now=performance.now();
+  if(now-lastBlipTime>2000){radarBlips.push({radius:0,alpha:0.7});lastBlipTime=now;}
+  radarBlips=radarBlips.filter(b=>b.alpha>0.01).slice(-20);
+  radarBlips.forEach(b=>{
+    b.radius+=1.0; b.alpha*=0.97;
+    locCtx.beginPath(); locCtx.arc(cx,cy,b.radius,0,Math.PI*2);
+    locCtx.strokeStyle=`rgba(200,240,96,${b.alpha})`; locCtx.lineWidth=1.5; locCtx.stroke();
+  });
+  // Origin crosshair
+  const ox=cx+(-camX)*scale, oy=cy+(-camZ)*scale;
+  locCtx.strokeStyle='rgba(200,240,96,0.5)'; locCtx.lineWidth=1;
+  locCtx.beginPath(); locCtx.arc(ox,oy,5,0,Math.PI*2); locCtx.stroke();
+  locCtx.beginPath(); locCtx.moveTo(ox-9,oy); locCtx.lineTo(ox+9,oy);
+  locCtx.moveTo(ox,oy-9); locCtx.lineTo(ox,oy+9); locCtx.stroke();
+  locCtx.fillStyle='rgba(200,240,96,0.4)';
+  locCtx.font='8px DM Mono, monospace'; locCtx.textAlign='center';
+  locCtx.fillText('0,0',ox,oy+17);
+  // Camera triangle
+  locCtx.save(); locCtx.translate(cx,cy); locCtx.rotate(-camYaw.val);
+  locCtx.beginPath(); locCtx.moveTo(0,-9); locCtx.lineTo(5,6); locCtx.lineTo(0,2); locCtx.lineTo(-5,6);
+  locCtx.closePath(); locCtx.fillStyle='#c8f060'; locCtx.fill(); locCtx.restore();
+  // Position text
+  locCtx.fillStyle='rgba(155,155,151,0.7)';
+  locCtx.font='8px DM Mono, monospace'; locCtx.textAlign='left';
+  locCtx.fillText(`${camX.toFixed(1)}, ${camZ.toFixed(1)}`,4,h-4);
+}
+
+// ── MULTIVIEW CAMERAS ─────────────────────────────────────────────────────────
+function updateMVCameras() {
+  mvCameras['tower'].lookAt(cameraRig.position);
+}
+
+// ── PITCH RIBBON ──────────────────────────────────────────────────────────────
+// ── SCENE OBJECTS — CUBES ─────────────────────────────────────────────────────
+const spawnedCubes = [];
+const cubeMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.7, metalness: 0.1 });const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+
+// ── ANIMATE ───────────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  const speedPct = Math.abs(speed) / MAX_SPEED * 100;
+  const alt = cameraRig.position.y;
+
+  if (!gamePaused) {
+  // Phase transitions (only upgrade, never downgrade from 3)
+  if (flightPhase < 3) {
+    if (!brakesOn) {
+      if (alt > 5)            flightPhase = 3;
+      else if (speedPct > 15) flightPhase = 2;
+      else                    flightPhase = 1;
+    } else {
+      flightPhase = 0;
+    }
+  }
+  if (brakesOn && alt > 2) { brakesOn = false; flightPhase = Math.max(flightPhase,1); }
+
+  // Steering
+  const yawRate  = flightPhase >= 3 ? -mouse.x * 0.03 : 0;
+  const tgtPitch = flightPhase >= 2 ? -mouse.y * Math.PI * 0.35 : 0;
+  const tgtRoll  = flightPhase >= 3 ?  mouse.x * Math.PI * 0.18 : 0;
+  camYaw.val  += yawRate;
+  camPitch.val += (tgtPitch - camPitch.val) * 0.06;
+  camPitch.val  = Math.max(-Math.PI*0.4, Math.min(Math.PI*0.4, camPitch.val));
+  camRoll.val  += (tgtRoll  - camRoll.val)  * 0.05;
+
+  cameraRig.rotation.y = camYaw.val;
+  cameraRig.rotation.x = camPitch.val;
+  cameraRig.rotation.z = -camRoll.val;
+
+  // Horizon offset on camera child — independent of rig pitch
+  camera.rotation.x = horizonOffset;
+
+  // Movement — driven by rig world direction only (horizon offset on camera child has no effect on travel)
+  if (!brakesOn && Math.abs(speed) > 0.001) {
+    const dir = new THREE.Vector3(); cameraRig.getWorldDirection(dir);
+    cameraRig.position.addScaledVector(dir, -speed * 0.5);
+  }
+  cameraRig.position.y = Math.max(0.5, cameraRig.position.y);
+
+  updateAttachedModel();
+
+  // Rotate spawned cubes
+  spawnedCubes.forEach(c => {
+    c.rotateOnAxis(c.userData.rotAxis, c.userData.rotSpeed);
+  });
+  } // end !gamePaused
+
+  // Fog is updated only when atmoOn/atmoDensity/bgColor change — see updateFog()
+
+  // Main render — always uses main camera
+  renderer.setClearColor(bgColorInt);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, viewportEl.clientWidth, viewportEl.clientHeight);
+  renderer.render(scene, camera);
+  camera.updateMatrixWorld();
+
+  // ── World-axis gizmo ─────────────────────────────────────────────────────────
+  const vw = viewportEl.clientWidth;
+  const vh = viewportEl.clientHeight;
+  renderer.autoClear = false;
+  renderer.setScissorTest(true);
+  renderer.setScissor(vw - GIZMO_SIZE, vh - GIZMO_SIZE, GIZMO_SIZE, GIZMO_SIZE);
+  renderer.setViewport(vw - GIZMO_SIZE, vh - GIZMO_SIZE, GIZMO_SIZE, GIZMO_SIZE);
+  renderer.clearDepth();
+  camera.getWorldQuaternion(_gizmoQ);
+  axisRoot.quaternion.copy(_gizmoQ).invert();
+  renderer.render(axisScene, axisCamera);
+  renderer.setScissorTest(false);
+  renderer.autoClear = true;
+
+  // Auxiliary camera (tower) — always rendered into right panel canvas
+  updateMVCameras();
+  if (mvRenderers['tower']) {
+    mvRenderers['tower'].setClearColor(bgColorInt);
+    mvRenderers['tower'].render(scene, mvCameras['tower']);
+  }
+
+  if (locationActive) drawLocation();
+
+  // ── HUD & PANEL UPDATES ───────────────────────────────────────────────────
+  const pitchDeg = (camPitch.val * 180 / Math.PI).toFixed(1);
+  const yawDeg   = (((-camYaw.val * 180 / Math.PI) % 360 + 360) % 360).toFixed(0);
+
+  // HUD
+  positionHudCanvas();
+  drawHUD(parseFloat(pitchDeg), camRoll.val, parseInt(yawDeg), speedPct, alt);
+
+  drawAttitude(camPitch.val, camRoll.val);
+
+  document.getElementById('cp-speed').textContent  = speedPct.toFixed(0) + '%';
+  document.getElementById('cp-alt').textContent    = alt.toFixed(1);
+  document.getElementById('cp-pitch').textContent  = pitchDeg + '°';
+  document.getElementById('cp-hdg').textContent    = yawDeg + '°';
+  document.getElementById('cp-pos-x').textContent  = cameraRig.position.x.toFixed(2);
+  document.getElementById('cp-pos-y').textContent  = cameraRig.position.y.toFixed(2);
+  document.getElementById('cp-pos-z').textContent  = cameraRig.position.z.toFixed(2);
+  document.getElementById('hud-speed').textContent = speedPct.toFixed(0) + '%';
+  document.getElementById('hud-alt').textContent   = alt.toFixed(0);
+  document.getElementById('hud-x').textContent     = cameraRig.position.x.toFixed(0);
+  document.getElementById('hud-z').textContent     = cameraRig.position.z.toFixed(0);
+  document.getElementById('hud-hdg').textContent   = yawDeg + '°';
+  document.getElementById('hud-brakes').textContent = brakesOn ? 'ON' : 'OFF';
+  document.getElementById('speed-bar').style.width  = Math.min(speedPct, 100) + '%';
+
+  // Status box
+  const sb = document.getElementById('status-box');
+  const st = document.getElementById('status-title');
+  const sm = document.getElementById('status-msg');
+  if (flightPhase === 0) {
+    sb.classList.add('active');
+    st.textContent = 'Brakes On';
+    sm.textContent = 'Press SPACEBAR or CLICK viewport to release brakes';
+  } else if (flightPhase === 1) {
+    sb.classList.add('active');
+    st.textContent = 'Taxiing';
+    sm.textContent = 'Increase speed above 15% to enable pitch control';
+  } else if (flightPhase === 2) {
+    sb.classList.add('active');
+    st.textContent = 'Rolling — Pitch Enabled';
+    sm.textContent = 'Pull back to take off';
+  } else {
+    sb.classList.remove('active');
+  }
+
+  // Warnings — skipped while paused (pause display owns the warning box)
+  if (!gamePaused) {
+  const dist = cameraRig.position.length();
+  const wb = document.getElementById('warning-box');
+  if (!warningsActive) {
+    wb.classList.remove('active', 'flash');
+    document.getElementById('warn-overlay').style.display = 'none';
+    document.getElementById('location-overlay').style.borderColor = 'var(--border)';
+  } else {
+    const altAdvisory  = parseFloat(document.getElementById('warn-alt-advisory').value)  || 50;
+    const altCritical  = parseFloat(document.getElementById('warn-alt-critical').value)  || 60;
+    const distAdvisory = parseFloat(document.getElementById('warn-dist-advisory').value) || 50;
+    const distCritical = parseFloat(document.getElementById('warn-dist-critical').value) || 60;
+    const warns = []; let urgent = false;
+    if      (alt  > altCritical)  { warns.push({t:'⚠ Altitude Critical', m:'Descend immediately'});            urgent=true; }
+    else if (alt  > altAdvisory)  { warns.push({t:'Altitude Warning',     m:'Altitude high — reduce altitude'}); }
+    if      (dist > distCritical) { warns.push({t:'⚠ Fuel Critical',      m:'Return to base immediately'});     urgent=true; }
+    else if (dist > distAdvisory) { warns.push({t:'Fuel Warning',          m:'Distance from origin high'});       }
+    const warnActive = warns.length > 0;
+    if (warnActive) {
+      wb.classList.add('active'); wb.classList.toggle('flash', urgent);
+      document.getElementById('warning-title').textContent = warns.map(w=>w.t).join(' / ');
+      document.getElementById('warning-msg').textContent   = warns.map(w=>w.m).join('\n');
+    } else {
+      wb.classList.remove('active'); wb.classList.remove('flash');
+    }
+    document.getElementById('warn-overlay').style.display = warnActive ? 'block' : 'none';
+    document.getElementById('location-overlay').style.borderColor = warnActive
+      ? 'rgba(240,128,128,0.5)'
+      : 'var(--border)';
+  }
+  }
+
+}
+// ── HUD ───────────────────────────────────────────────────────────────────────
+const HUD_SIZE = 400;
+let hudActive  = true;
+let hudColor   = '#00ff00';
+
+const hudCanvas = document.getElementById('hud-canvas');
+const hudCtx    = hudCanvas.getContext('2d');
+hudCanvas.width  = HUD_SIZE;
+hudCanvas.height = HUD_SIZE;
+
+// ── COCKPIT SKIN ──────────────────────────────────────────────────────────────
+let skinLoaded = false;
+const skinImg    = document.getElementById('cockpit-skin');
+const skinStatus = document.getElementById('skin-status');
+
+function updateCrosshair() {
+  const skinOn = skinLoaded && document.getElementById('btn-skin-visible').checked;
+  const crosshair = document.getElementById('crosshair');
+  crosshair.style.display = (!hudActive && !skinOn) ? 'block' : 'none';
+}
+
+function positionHudCanvas() {
+  const vp   = viewportEl.getBoundingClientRect();
+  const skinOn = skinLoaded && document.getElementById('btn-skin-visible').checked;
+  const anchorX = vp.width  * 0.5;
+  const anchorY = skinOn ? vp.height * 0.4 : vp.height * 0.5;
+  hudCanvas.style.left = (anchorX - HUD_SIZE / 2) + 'px';
+  hudCanvas.style.top  = (anchorY - HUD_SIZE / 2) + 'px';
+}
+
+function drawHUD(pitchDeg, rollRad, yawDeg, speedPct, alt) {
+  hudCtx.clearRect(0, 0, HUD_SIZE, HUD_SIZE);
+  if (!hudActive) return;
+  const cx = HUD_SIZE / 2;
+  const cy = HUD_SIZE / 2;
+  const c  = hudColor;
+  hudCtx.save();
+  hudCtx.strokeStyle = c;
+  hudCtx.fillStyle   = c;
+  hudCtx.lineWidth   = 1.5;
+  hudCtx.font        = '11px DM Mono, monospace';
+  hudCtx.textAlign   = 'center';
+  hudCtx.textBaseline = 'middle';
+  // ── Debug outline box 0,0 → 100,520 ──────────────────────────────────────
+  hudCtx.strokeRect(0.5, 0.5, HUD_SIZE - 1, HUD_SIZE - 1);
+
+  // ── Boresight reticle ──────────────────────────────────────────────────────
+  const rr = 28;
+  hudCtx.beginPath(); hudCtx.arc(cx, cy, rr, 0, Math.PI * 2); hudCtx.stroke();
+  const gap = rr + 5, arm = 16;
+  hudCtx.beginPath();
+  hudCtx.moveTo(cx, cy - gap - arm); hudCtx.lineTo(cx, cy - gap);
+  hudCtx.moveTo(cx, cy + gap);       hudCtx.lineTo(cx, cy + gap + arm);
+  hudCtx.moveTo(cx - gap - arm, cy); hudCtx.lineTo(cx - gap, cy);
+  hudCtx.moveTo(cx + gap, cy);       hudCtx.lineTo(cx + gap + arm, cy);
+  hudCtx.stroke();
+  hudCtx.beginPath(); hudCtx.arc(cx, cy, 2, 0, Math.PI * 2); hudCtx.fill();
+  hudCtx.restore();
+}
+
+// ── ACCORDION ─────────────────────────────────────────────────────────────────
+document.getElementById('setup-panel').addEventListener('click', e => {
+  const header = e.target.closest('.accordion-header');
+  if (!header) return;
+  const item = header.parentElement;
+  item.classList.toggle('open');
+});
+
+animate();
+
+// Force resize after full layout paint
+window.addEventListener('load', () => setTimeout(resizeAll, 50));
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  // Tower camera always active — initialise renderer now that canvas has dimensions
+  ensureMvRenderers();
+  resizeAll();
+  updateCrosshair();
+}));
+
+// Force resize after full layout paint
+window.addEventListener('load', () => setTimeout(resizeAll, 50));
+
+// ── UI BUTTONS ────────────────────────────────────────────────────────────────
+document.getElementById('btn-location').addEventListener('click', () => {
+  locationActive = !locationActive;
+  document.getElementById('location-overlay').classList.toggle('active', locationActive);
+  document.getElementById('btn-location').classList.toggle('active', locationActive);
+  if (locationActive) {
+    setTimeout(() => {
+      const r = locationCanvas.parentElement.getBoundingClientRect();
+      locationCanvas.width  = Math.max(r.width,  196);
+      locationCanvas.height = Math.max(r.height - 30, 140);
+    }, 20);
+  }
+});
+
+// ── COCKPIT SKIN LISTENERS ────────────────────────────────────────────────────
+document.getElementById('skin-file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  skinImg.onload = () => {
+    skinLoaded = true;
+    skinImg.style.display = 'block';
+    skinStatus.textContent = file.name;
+    skinStatus.style.color = 'var(--accent)';
+    document.getElementById('btn-skin-visible').checked = true;
+    updateCrosshair();
+    positionHudCanvas();
+    URL.revokeObjectURL(url);
+  };
+  skinImg.onerror = () => {
+    skinStatus.textContent = 'Error loading skin';
+    skinStatus.style.color = 'var(--danger)';
+    URL.revokeObjectURL(url);
+  };
+  skinImg.src = url;
+  e.target.value = '';
+});
+
+document.getElementById('btn-hud-active').addEventListener('change', e => {
+  hudActive = e.target.checked;
+  updateCrosshair();
+});
+
+document.getElementById('hud-color').addEventListener('input', e => {
+  hudColor = e.target.value;
+  document.getElementById('hud-color-hex').textContent = e.target.value;
+});
+
+document.getElementById('btn-skin-visible').addEventListener('change', e => {
+  if (!skinLoaded) return;
+  skinImg.style.display = e.target.checked ? 'block' : 'none';
+  updateCrosshair();
+});
+
+document.getElementById('skin-horizon-offset').addEventListener('input', e => {
+  const deg = parseFloat(e.target.value);
+  horizonOffset = deg * (Math.PI / 180);
+  document.getElementById('skin-horizon-val').textContent = deg.toFixed(1) + '°';
+});
+
+document.getElementById('btn-skin-clear').addEventListener('click', () => {
+  skinLoaded = false;
+  skinImg.src = '';
+  skinImg.style.display = 'none';
+  skinStatus.textContent = '';
+  document.getElementById('btn-skin-visible').checked = true;
+  updateCrosshair();
+  positionHudCanvas();
+});
+
+// ── FOG ───────────────────────────────────────────────────────────────────────
+function updateFog() {
+  if (atmoOn) {
+    const col = bgColorInt;
+    if (scene.fog) {
+      scene.fog.color.setHex(col);
+      scene.fog.density = atmoDensity;
+    } else {
+      scene.fog = new THREE.FogExp2(col, atmoDensity);
+    }
+  } else {
+    scene.fog = null;
+  }
+}
+
+document.getElementById('bg-color').addEventListener('input', e => {
+  bgColor    = e.target.value;
+  bgColorInt = parseInt(bgColor.replace('#',''), 16);
+  document.getElementById('bg-hex').textContent = bgColor;
+  updateFog();
+});
+
+document.getElementById('grid-color').addEventListener('input', e => {
+  gridColor = e.target.value;
+  document.getElementById('grid-hex').textContent = gridColor;
+  scene.remove(gridMesh); gridMesh.geometry.dispose(); gridMesh.material.dispose();
+  gridMesh = buildGrid(gridColor); scene.add(gridMesh);
+});
+
+// ── TOGGLE SWITCHES (checkbox-based) ─────────────────────────────────────────
+document.getElementById('btn-warnings-active').addEventListener('change', e => {
+  warningsActive = e.target.checked;
+  if (!warningsActive) {
+    document.getElementById('warning-box').classList.remove('active', 'flash');
+    document.getElementById('warn-overlay').style.display = 'none';
+    document.getElementById('location-overlay').style.borderColor = 'var(--border)';
+  }
+});
+
+document.getElementById('btn-grid').addEventListener('change', e => {
+  gridMesh.visible = e.target.checked;
+});
+
+document.getElementById('btn-ground').addEventListener('change', e => {
+  groundPlane.visible = e.target.checked;
+});
+
+document.getElementById('btn-shadows').addEventListener('change', e => {
+  const on = e.target.checked;
+  renderer.shadowMap.enabled  = on;
+  sun.castShadow              = on;
+  groundPlane.receiveShadow   = on;
+  spawnedCubes.forEach(c => { c.castShadow = on; c.receiveShadow = on; });
+  if (on) renderer.shadowMap.needsUpdate = true;
+  scene.traverse(obj => { if (obj.material) obj.material.needsUpdate = true; });
+});
+
+document.getElementById('btn-light-helpers').addEventListener('change', e => {
+  const visible = e.target.checked;
+  sunHelper.visible   = visible;
+  fillHelper.visible  = visible;
+  fill2Helper.visible = visible;
+  sunHelper.update();
+  fillHelper.update();
+  fill2Helper.update();
+});
+
+// ── LIGHTS SECTION ────────────────────────────────────────────────────────────
+// Exposure
+document.getElementById('light-exposure').addEventListener('input', e => {
+  const val = parseFloat(e.target.value);
+  renderer.toneMappingExposure = val;
+  if (mvRenderers['tower']) mvRenderers['tower'].toneMappingExposure = val;
+  document.getElementById('light-exposure-val').textContent = val.toFixed(2);
+});
+
+// Ambient intensity
+document.getElementById('light-ambient').addEventListener('input', e => {
+  ambientLight.intensity = parseFloat(e.target.value);
+  document.getElementById('light-ambient-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+// Sun
+document.getElementById('sun-color').addEventListener('input', e => {
+  sun.color.set(e.target.value);
+  document.getElementById('sun-color-hex').textContent = e.target.value;
+  sunHelper.update();
+});
+document.getElementById('sun-intensity').addEventListener('input', e => {
+  sun.intensity = parseFloat(e.target.value);
+  document.getElementById('sun-intensity-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+['x','y','z'].forEach(axis => {
+  document.getElementById('sun-' + axis).addEventListener('input', e => {
+    sun.position[axis] = parseFloat(e.target.value) || 0;
+    sun.shadow.camera.updateProjectionMatrix();
+    sunHelper.update();
+  });
+});
+
+// Fill 1
+document.getElementById('fill-color').addEventListener('input', e => {
+  fill.color.set(e.target.value);
+  document.getElementById('fill-color-hex').textContent = e.target.value;
+  fillHelper.update();
+});
+document.getElementById('fill-intensity').addEventListener('input', e => {
+  fill.intensity = parseFloat(e.target.value);
+  document.getElementById('fill-intensity-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+['x','y','z'].forEach(axis => {
+  document.getElementById('fill-' + axis).addEventListener('input', e => {
+    fill.position[axis] = parseFloat(e.target.value) || 0;
+    fillHelper.update();
+  });
+});
+
+// Fill 2
+document.getElementById('fill2-color').addEventListener('input', e => {
+  fill2.color.set(e.target.value);
+  document.getElementById('fill2-color-hex').textContent = e.target.value;
+  fill2Helper.update();
+});
+document.getElementById('fill2-intensity').addEventListener('input', e => {
+  fill2.intensity = parseFloat(e.target.value);
+  document.getElementById('fill2-intensity-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+['x','y','z'].forEach(axis => {
+  document.getElementById('fill2-' + axis).addEventListener('input', e => {
+    fill2.position[axis] = parseFloat(e.target.value) || 0;
+    fill2Helper.update();
+  });
+});
+
+document.getElementById('btn-atmo').addEventListener('change', e => {
+  atmoOn = e.target.checked;
+  updateFog();
+});
+
+document.getElementById('atmo-density').addEventListener('input', e => {
+  atmoDensity = parseFloat(e.target.value);
+  document.getElementById('atmo-density-val').textContent = atmoDensity.toFixed(3);
+  updateFog();
+});
+
+// ── GLB / GLTF LOADER ────────────────────────────────────────────────────────
+const loadedModels = [];
+const gltfLoader   = new THREE.GLTFLoader();
+const glbStatus    = document.getElementById('glb-status');
+const glbList      = document.getElementById('glb-list');
+
+function setGlbStatus(msg, type) {
+  glbStatus.textContent = msg;
+  glbStatus.className   = type || '';
+}
+
+function refreshGlbList() {
+  if (loadedModels.length === 0) { glbList.innerHTML = ''; return; }
+  glbList.innerHTML = loadedModels.map((m, i) => `
+    <div class="glb-item">
+      <span class="glb-item-name" title="${m.name}">${m.name}</span>
+      <span class="glb-remove" data-idx="${i}">✕</span>
+    </div>`).join('');
+  glbList.querySelectorAll('.glb-remove').forEach(el => {
+    el.addEventListener('click', () => removeGlbModel(parseInt(el.dataset.idx)));
+  });
+}
+
+function removeGlbModel(idx) {
+  const m = loadedModels[idx];
+  if (!m) return;
+  if (m.root === attachedModel) {
+    attachPivot.remove(m.root);
+    attachedModel = null;
+  }
+  scene.remove(m.root);
+  loadedModels.splice(idx, 1);
+  refreshGlbList();
+  setGlbStatus(loadedModels.length ? `${loadedModels.length} model(s) loaded` : '', '');
+}
+
+function attachModelToCamera(root) {
+  scene.remove(root);
+  root.position.set(0, -1, 0);
+  root.rotation.set(0, Math.PI, 0);
+  attachPivot.add(root);
+  attachedModel = root;
+}
+
+function detachModelFromCamera(root) {
+  attachPivot.remove(root);
+  root.position.set(0, 0, 0);
+  root.rotation.set(0, 0, 0);
+  scene.add(root);
+  attachedModel = null;
+}
+
+function updateAttachedModel() {
+  if (!attachToCamera || !attachedModel) return;
+  camera.updateMatrixWorld();
+  attachPivot.position.copy(cameraRig.position);
+  attachPivot.quaternion.copy(cameraRig.quaternion);
+  attachedModel.traverse(child => {
+    if (child.isMesh) child.layers.set(showInMainView ? 0 : 1);
+  });
+}
+
+document.getElementById('glb-file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setGlbStatus('Loading...', '');
+  const url = URL.createObjectURL(file);
+  gltfLoader.load(
+    url,
+    gltf => {
+      URL.revokeObjectURL(url);
+      const root = gltf.scene;
+      // Enable shadows on all meshes in the loaded model
+      root.traverse(child => {
+        if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+      });
+      const box  = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      if (maxDim > 20)      root.scale.setScalar(20 / maxDim);
+      else if (maxDim < 1)  root.scale.setScalar(5 / maxDim);
+
+      if (attachToCamera) {
+        attachModelToCamera(root);
+      } else {
+        const box2 = new THREE.Box3().setFromObject(root);
+        root.position.y -= box2.min.y;
+        scene.add(root);
+      }
+      loadedModels.push({ name: file.name, root });
+      refreshGlbList();
+      setGlbStatus(`✓ ${file.name}`, 'ok');
+      e.target.value = '';
+    },
+    xhr => {
+      const pct = xhr.total ? Math.round(xhr.loaded / xhr.total * 100) : '?';
+      setGlbStatus(`Loading… ${pct}%`, '');
+    },
+    err => {
+      URL.revokeObjectURL(url);
+      setGlbStatus('Error loading file', 'err');
+      e.target.value = '';
+      console.error('GLTFLoader error:', err);
+    }
+  );
+});
+
+// Attach to camera toggle
+document.getElementById('btn-attach').addEventListener('change', e => {
+  attachToCamera = e.target.checked;
+  if (attachToCamera) {
+    const last = loadedModels[loadedModels.length - 1];
+    if (last && !attachedModel) attachModelToCamera(last.root);
+  } else {
+    if (attachedModel) detachModelFromCamera(attachedModel);
+  }
+});
+
+// Visible in main view toggle
+document.getElementById('btn-show-in-main').addEventListener('change', e => {
+  showInMainView = e.target.checked;
+  if (attachedModel) {
+    attachedModel.traverse(child => {
+      if (child.isMesh) child.layers.set(showInMainView ? 0 : 1);
+    });
+  }
+});
+
+function getActiveModel() {
+  if (attachedModel) return attachedModel;
+  if (loadedModels.length > 0) return loadedModels[loadedModels.length - 1].root;
+  return null;
+}
+
+function updateScaleDisplay(root) {
+  document.getElementById('model-scale-val').textContent = root.scale.x.toFixed(2);
+}
+
+document.getElementById('btn-rotate-y').addEventListener('click', () => {
+  const model = getActiveModel();
+  if (!model) return;
+  model.rotation.y += Math.PI / 2;
+});
+
+document.getElementById('btn-scale-up').addEventListener('click', () => {
+  const model = getActiveModel();
+  if (!model) return;
+  model.scale.setScalar(model.scale.x * 1.05);
+  updateScaleDisplay(model);
+});
+
+document.getElementById('btn-scale-dn').addEventListener('click', () => {
+  const model = getActiveModel();
+  if (!model) return;
+  model.scale.setScalar(Math.max(0.001, model.scale.x * 0.95));
+  updateScaleDisplay(model);
+});
+
+const SHIFT_STEP = 0.5;
+
+function updateOffsetDisplay(model) {
+  document.getElementById('model-offset-val').textContent =
+    `${model.position.x.toFixed(1)}, ${model.position.y.toFixed(1)}, ${model.position.z.toFixed(1)}`;
+}
+
+document.getElementById('btn-shift-fwd').addEventListener('click', () => {
+  const model = getActiveModel(); if (!model) return;
+  model.position.z -= SHIFT_STEP; updateOffsetDisplay(model);
+});
+document.getElementById('btn-shift-bkwd').addEventListener('click', () => {
+  const model = getActiveModel(); if (!model) return;
+  model.position.z += SHIFT_STEP; updateOffsetDisplay(model);
+});
+document.getElementById('btn-shift-up').addEventListener('click', () => {
+  const model = getActiveModel(); if (!model) return;
+  model.position.y += SHIFT_STEP; updateOffsetDisplay(model);
+});
+document.getElementById('btn-shift-dn').addEventListener('click', () => {
+  const model = getActiveModel(); if (!model) return;
+  model.position.y -= SHIFT_STEP; updateOffsetDisplay(model);
+});
+
+document.getElementById('cube-count').addEventListener('input', e => {
+  document.getElementById('cube-count-val').textContent = e.target.value;
+});
+
+document.getElementById('cube-color').addEventListener('input', e => {
+  document.getElementById('cube-color-hex').textContent = e.target.value;
+});
+
+document.getElementById('cube-tolerance').addEventListener('input', e => {
+  document.getElementById('cube-tolerance-val').textContent = e.target.value + '%';
+});
+
+document.getElementById('btn-spawn-cubes').addEventListener('click', () => {
+  // Clear any existing cubes first
+  spawnedCubes.forEach(c => {
+    scene.remove(c);
+    c.material.dispose(); // each cube now has its own material
+  });
+  spawnedCubes.length = 0;
+
+  // Read parameters
+  const count     = parseInt(document.getElementById('cube-count').value);
+  const sizeMin   = parseFloat(document.getElementById('cube-size-min').value);
+  const sizeMax   = parseFloat(document.getElementById('cube-size-max').value);
+  const hexColor  = document.getElementById('cube-color').value;
+  const tolerance = parseInt(document.getElementById('cube-tolerance').value) / 100;
+  const hMin      = parseFloat(document.getElementById('cube-height-min').value);
+  const hMax      = parseFloat(document.getElementById('cube-height-max').value);
+
+  // Parse base colour into 0–255 RGB components
+  const baseR = parseInt(hexColor.slice(1,3), 16);
+  const baseG = parseInt(hexColor.slice(3,5), 16);
+  const baseB = parseInt(hexColor.slice(5,7), 16);
+
+  const safeHMin = Math.min(hMin, hMax);
+  const safeHMax = Math.max(hMin, hMax);
+  const safeSMin = Math.min(sizeMin, sizeMax);
+  const safeSMax = Math.max(sizeMin, sizeMax);
+
+  for (let i = 0; i < count; i++) {
+    // Random size — scale BoxGeometry(1,1,1) directly
+    const size = safeSMin + Math.random() * (safeSMax - safeSMin);
+
+    // Random colour with equal RGB tolerance shift
+    const shift = (Math.random() * 2 - 1) * tolerance; // -tol to +tol
+    const r = Math.round(Math.max(0, Math.min(255, baseR + shift * 255)));
+    const g = Math.round(Math.max(0, Math.min(255, baseG + shift * 255)));
+    const b = Math.round(Math.max(0, Math.min(255, baseB + shift * 255)));
+    const color = (r << 16) | (g << 8) | b;
+
+    const mat  = new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.1 });
+    const mesh = new THREE.Mesh(cubeGeo, mat);
+    mesh.scale.setScalar(size);
+    mesh.castShadow    = true;
+    mesh.receiveShadow = true;
+
+    mesh.position.set(
+      Math.random() * 100 - 50,
+      safeHMin + Math.random() * (safeHMax - safeHMin),
+      Math.random() * 100 - 50
+    );
+
+    mesh.userData.rotAxis = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1
+    ).normalize();
+    mesh.userData.rotSpeed = (Math.random() * 0.005) + 0.001;
+
+    scene.add(mesh);
+    spawnedCubes.push(mesh);
+  }
+});
+
+document.getElementById('btn-clear-cubes').addEventListener('click', () => {
+  spawnedCubes.forEach(c => { scene.remove(c); c.material.dispose(); });
+  spawnedCubes.length = 0;
+  if (starPoints) { scene.remove(starPoints); starPoints.geometry.dispose(); starPoints.material.dispose(); starPoints = null; }
+});
+
+document.getElementById('btn-spawn-stars').addEventListener('click', () => {
+  // Remove existing stars first
+  if (starPoints) { scene.remove(starPoints); starPoints.geometry.dispose(); starPoints.material.dispose(); starPoints = null; }
+  const starPos = new Float32Array(700 * 3);
+  for (let i = 0; i < 700; i++) {
+    const dist  = 150 + Math.random() * 150;
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.random() * Math.PI * 0.5;  // 0 to π/2 — upper hemisphere only
+    starPos[i*3]   = dist * Math.sin(phi) * Math.cos(theta);
+    starPos[i*3+1] = dist * Math.cos(phi);         // always positive — above Y=0
+    starPos[i*3+2] = dist * Math.sin(phi) * Math.sin(theta);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  starPoints = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.0 }));
+  scene.add(starPoints);
+});
+</script>
+</body>
+</html>
